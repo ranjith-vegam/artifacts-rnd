@@ -1,0 +1,59 @@
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9002:9000"   # S3 API
+      - "9003:9001"   # MinIO web console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-your-access-key}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-your-secret-key}
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-artifacts_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-artifacts_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-artifacts_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-artifacts_user} -d ${POSTGRES_DB:-artifacts_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "8080:8000"
+    environment:
+      MINIO_ENDPOINT_URL: http://minio:9000
+      PRESIGN_ENDPOINT_URL: ${PRESIGN_ENDPOINT_URL:-http://localhost:9002}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-your-access-key}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-your-secret-key}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-artifacts}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-artifacts_user}:${POSTGRES_PASSWORD:-artifacts_pass}@postgres:5432/${POSTGRES_DB:-artifacts_db}
+    depends_on:
+      minio:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  minio_data:
+  postgres_data:
