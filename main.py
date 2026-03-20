@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import asyncpg
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from artifact_repository import ArtifactRepository
 from artifact_store import ArtifactStore
@@ -41,17 +41,21 @@ app = FastAPI(title="Artifact Store", lifespan=lifespan)
 
 
 @app.get("/artifacts/{artifact_id}/link")
-async def get_artifact_link(artifact_id: str):
+async def get_artifact_link(
+    artifact_id: str,
+    download: bool = Query(default=False, description="Set true to force file download instead of inline render"),
+):
     record = await artifact_repo.get(artifact_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
-    fresh_link = await artifact_store.get_fresh_link(record["object_key"])
+    fresh_link = await artifact_store.get_fresh_link(record["object_key"], download=download)
     return {
         "artifact_id": artifact_id,
         "link": fresh_link,
         "mime_type": record["mime_type"],
         "filename_hint": record["filename_hint"],
+        "mode": "download" if download else "inline",
     }
 
 

@@ -108,17 +108,28 @@ class ArtifactStore:
             "expires_in_seconds": self.presign_expiry_seconds,
         }
 
-    async def get_fresh_link(self, object_key: str) -> str:
+    async def get_fresh_link(self, object_key: str, download: bool = False) -> str:
+        """
+        Returns a presigned URL for the given object.
+
+        download=False (default): browser renders inline (image shown, HTML displayed, etc.)
+        download=True: browser always prompts a file download regardless of MIME type.
+        """
         async with self._client() as s3:
             try:
-                await s3.head_object(Bucket=self.bucket_name, Key=object_key)
+                meta = await s3.head_object(Bucket=self.bucket_name, Key=object_key)
             except ClientError:
                 raise FileNotFoundError(f"Artifact not found: {object_key}")
+
+        params = {"Bucket": self.bucket_name, "Key": object_key}
+        if download:
+            filename = meta.get("Metadata", {}).get("filename-hint") or object_key.split("/")[-1]
+            params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
 
         async with self._presign_client() as s3:
             return await s3.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": self.bucket_name, "Key": object_key},
+                Params=params,
                 ExpiresIn=self.presign_expiry_seconds,
             )
 
